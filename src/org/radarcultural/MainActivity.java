@@ -1,19 +1,24 @@
 package org.radarcultural;
 
-import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.List;
-import java.util.Locale;
+
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.StatusLine;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import android.content.Context;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.Point;
-import android.location.Address;
-import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.FragmentActivity;
 import android.util.Log;
@@ -24,13 +29,8 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
-import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
-import com.google.android.maps.GeoPoint;
-import com.google.android.maps.MapController;
-import com.google.android.maps.MapView;
-import com.google.android.maps.Overlay;
 
 public class MainActivity extends FragmentActivity implements LocationListener {
 	private static final long MIN_TIME_BW_UPDATES = 0;
@@ -44,10 +44,12 @@ public class MainActivity extends FragmentActivity implements LocationListener {
 		setContentView(R.layout.activity_main);
 		setUpMapIfNeeded();
 		System.out.println(getLocation());
-//		gMap.animateCamera(CameraUpdateFactory
-//				.newCameraPosition(new CameraPosition(new LatLng(9.491327,
-//						76.571404), 10, 30, 0)));
+		// gMap.animateCamera(CameraUpdateFactory
+		// .newCameraPosition(new CameraPosition(new LatLng(9.491327,
+		// 76.571404), 10, 30, 0)));
 		getCurrentLocation();
+		new ReadWeatherJSONFeedTask()
+				.execute("http://www.radarcultural.com.ar/events/get?eventCategory=%5B%5D&eventInterval=1&neLat=-31.598035689038454&neLong=-60.63508608364259&swLat=-31.666729827847984&swLong=-60.763832116357435");
 
 	}
 
@@ -74,36 +76,98 @@ public class MainActivity extends FragmentActivity implements LocationListener {
 
 	private void getCurrentLocation() {
 
-		double[] d = getLocation();
-		double lat = d[0];
-		double lng = d[1];
+		// double[] d = getLocation();
+		// double lat = d[0];
+		// double lng = d[1];
 
-		gMap.addMarker(new MarkerOptions()
-				.position(new LatLng(lat, lng))
-				.title("Current Location")
-				.icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_launcher)));
+		Location location = getLocation();
 
-		gMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(
-				lat, lng), 16));
+		if (location != null) {
+			double latitude = location.getLatitude();
+			double longitude = location.getLongitude();
+			LatLng position = new LatLng(latitude, longitude);
+			Integer zoom = 14;
+
+			gMap.addMarker(new MarkerOptions()
+					.position(position)
+					.title("Tu ubicación actual")
+					.icon(BitmapDescriptorFactory
+							.fromResource(R.drawable.ic_launcher)));
+
+			gMap.animateCamera(CameraUpdateFactory
+					.newLatLngZoom(position, zoom));
+		}
 	}
 
-	public double[] getLocation() {
-		LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-		List<String> providers = lm.getProviders(true);
+	// public double[] getLocation() {
+	// LocationManager lm = (LocationManager)
+	// getSystemService(Context.LOCATION_SERVICE);
+	// List<String> providers = lm.getProviders(true);
+	//
+	// Location l = null;
+	// for (int i = 0; i < providers.size(); i++) {
+	// l = lm.getLastKnownLocation(providers.get(i));
+	// if (l != null)
+	// break;
+	// }
+	// double[] gps = new double[2];
+	//
+	// if (l != null) {
+	// gps[0] = l.getLatitude();
+	// gps[1] = l.getLongitude();
+	// }
+	// return gps;
+	// }
 
-		Location l = null;
-		for (int i = 0; i < providers.size(); i++) {
-			l = lm.getLastKnownLocation(providers.get(i));
-			if (l != null)
-				break;
-		}
-		double[] gps = new double[2];
+	public Location getLocation() {
+		Location location = null;
+		LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+		List<String> providers = locationManager.getProviders(true);
 
-		if (l != null) {
-			gps[0] = l.getLatitude();
-			gps[1] = l.getLongitude();
+		// getting GPS status
+		boolean isGPSEnabled = locationManager
+				.isProviderEnabled(LocationManager.GPS_PROVIDER);
+
+		// getting network status
+		boolean isNetworkEnabled = locationManager
+				.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+
+		if (!isGPSEnabled && !isNetworkEnabled) {
+			// no network provider is enabled
+			for (int i = 0; i < providers.size(); i++) {
+				location = locationManager.getLastKnownLocation(providers
+						.get(i));
+				if (location != null)
+					break;
+			}
+		} else {
+			this.canGetLocation = true;
+
+			if (isNetworkEnabled) {
+				locationManager.requestLocationUpdates(
+						LocationManager.NETWORK_PROVIDER, MIN_TIME_BW_UPDATES,
+						MIN_DISTANCE_CHANGE_FOR_UPDATES, this);
+				Log.d("Network", "Network Enabled");
+				if (locationManager != null) {
+					location = locationManager
+							.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+				}
+			}
+
+			// if GPS Enabled get lat/long using GPS Services
+			if (isGPSEnabled) {
+				locationManager.requestLocationUpdates(
+						LocationManager.GPS_PROVIDER, MIN_TIME_BW_UPDATES,
+						MIN_DISTANCE_CHANGE_FOR_UPDATES, this);
+				Log.d("GPS", "GPS Enabled");
+				if (locationManager != null) {
+					location = locationManager
+							.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+				}
+			}
 		}
-		return gps;
+
+		return location;
 	}
 
 	// private Location getLocation() {
@@ -193,6 +257,103 @@ public class MainActivity extends FragmentActivity implements LocationListener {
 	public void onStatusChanged(String arg0, int arg1, Bundle arg2) {
 		// TODO Auto-generated method stub
 
+	}
+
+	public String readJSONFeed(String URL) {
+		StringBuilder stringBuilder = new StringBuilder();
+		HttpClient httpClient = new DefaultHttpClient();
+		HttpGet httpGet = new HttpGet(URL);
+		try {
+			HttpResponse response = httpClient.execute(httpGet);
+			StatusLine statusLine = response.getStatusLine();
+			int statusCode = statusLine.getStatusCode();
+			if (statusCode == 200) {
+				HttpEntity entity = response.getEntity();
+				InputStream inputStream = entity.getContent();
+				BufferedReader reader = new BufferedReader(
+						new InputStreamReader(inputStream));
+				String line;
+				while ((line = reader.readLine()) != null) {
+					stringBuilder.append(line);
+				}
+				inputStream.close();
+			} else {
+				Log.d("JSON", "Failed to download file");
+			}
+		} catch (Exception e) {
+			Log.d("readJSONFeed", e.getLocalizedMessage());
+		}
+		return stringBuilder.toString();
+	}
+
+	private class ReadWeatherJSONFeedTask extends
+			AsyncTask<String, Void, String> {
+
+		protected String doInBackground(String... urls) {
+			System.out.println(urls[0]);
+			return readJSONFeed(urls[0]);
+		}
+
+		protected void onPostExecute(String result) {
+			try {
+				JSONArray eventos = new JSONArray(result);
+
+				for (int i = 0; i <= eventos.length(); i++) {
+					JSONObject evento = eventos.getJSONObject(i);
+					JSONObject category = evento.getJSONObject("Category");
+					JSONObject event = evento.getJSONObject("Event");
+
+					String title = event.getString("title");
+					String categoryIcon = category.getString("icon");
+
+					// Se obtiene la posición del evento y se parsea a double
+					double latitude = Double
+							.parseDouble(event.getString("lat"));
+					double longitude = Double.parseDouble(event
+							.getString("long"));
+					LatLng latlong = new LatLng(latitude, longitude);
+
+					System.out.println(evento.toString());
+					System.out.println(category.toString());
+					System.out.println(categoryIcon);
+					System.out.println(categoryIcon.substring(0,
+							categoryIcon.length() - 4));
+
+					int icon = getResources()
+							.getIdentifier(
+									categoryIcon.substring(0,
+											categoryIcon.length() - 4),
+									"drawable", getPackageName());
+
+					System.out.println(icon);
+
+					// Se setea un icono por defecto si no se pudo encontrar el
+					// icono correspondiente a la categoría
+					if (icon == 0) {
+						icon = R.drawable.musica;
+					}
+
+					gMap.addMarker(new MarkerOptions().position(latlong)
+							.title(title).icon(BitmapDescriptorFactory
+							// .fromResource(R.drawable.musica)));
+									.fromResource(icon)));
+
+				}
+
+				// JSONObject weatherObservationItems = new JSONObject(
+				// jsonObject.getString("weatherObservation"));
+				//
+				// Toast.makeText(
+				// getBaseContext(),
+				// weatherObservationItems.getString("clouds")
+				// + " - "
+				// + weatherObservationItems
+				// .getString("stationName"),
+				// Toast.LENGTH_SHORT).show();
+			} catch (Exception e) {
+				Log.d("ReadWeatherJSONFeedTask", e.getLocalizedMessage());
+			}
+		}
 	}
 
 	// protected void updateLocation(Location location) {
