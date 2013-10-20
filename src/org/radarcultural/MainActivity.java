@@ -23,34 +23,43 @@ import android.os.Bundle;
 import android.support.v4.app.FragmentActivity;
 import android.util.Log;
 import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
 import android.widget.Toast;
 
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.GoogleMap.OnCameraChangeListener;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.VisibleRegion;
+import com.google.android.gms.maps.model.VisibleRegionCreator;
 
 public class MainActivity extends FragmentActivity implements LocationListener {
 	private static final long MIN_TIME_BW_UPDATES = 0;
 	private static final float MIN_DISTANCE_CHANGE_FOR_UPDATES = 0;
 	private GoogleMap gMap;
-	private boolean canGetLocation;
+	private Location location = null;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
 		setUpMapIfNeeded();
-		System.out.println(getLocation());
-		// gMap.animateCamera(CameraUpdateFactory
-		// .newCameraPosition(new CameraPosition(new LatLng(9.491327,
-		// 76.571404), 10, 30, 0)));
 		getCurrentLocation();
-		new ReadWeatherJSONFeedTask()
-				.execute("http://www.radarcultural.com.ar/events/get?eventCategory=%5B%5D&eventInterval=1&neLat=-31.598035689038454&neLong=-60.63508608364259&swLat=-31.666729827847984&swLong=-60.763832116357435");
-
+		
+		if (location != null) {
+			updateMapItems();
+		}
+//		} else {
+//			new ReadWeatherJSONFeedTask()
+//					.execute("
+//							http://www.radarcultural.com.ar/events/get?eventCategory=%5B%5D&eventInterval=1&neLat=-31.598035689038454&neLong=-60.63508608364259&swLat=-31.666729827847984&swLong=-60.763832116357435");
+//							http://www.radarcultural.com.ar/events/get?eventCategory=%5B%5D&eventInterval=1&neLat=-31.616974940104598&neLong=-60.72560034692287&swLat=-31.654195071234096&swLong=-60.697447545826435
+//		}
 	}
 
 	@Override
@@ -59,7 +68,21 @@ public class MainActivity extends FragmentActivity implements LocationListener {
 		getMenuInflater().inflate(R.menu.main, menu);
 		return true;
 	}
-
+	
+	@Override
+	public boolean onOptionsItemSelected(MenuItem item) {
+	    // Handle item selection
+	    switch (item.getItemId()) {
+	        case R.id.action_settings:
+	            return true;
+	        case R.id.action_update:
+	        	updateMapItems();
+	            return true;
+	        default:
+	            return super.onOptionsItemSelected(item);
+	    }
+	}
+	
 	private void setUpMapIfNeeded() {
 		if (gMap != null) {
 			return;
@@ -72,13 +95,50 @@ public class MainActivity extends FragmentActivity implements LocationListener {
 		// Initialize map options. For example:
 		// mMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
 		gMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+		
+		
+		gMap.setOnCameraChangeListener(new OnCameraChangeListener() {
+			
+            public void onCameraChange(CameraPosition cameraPosition) {
+              updateMapItems();
+            }
+
+        });
+	}
+
+	public void updateMapItems(View view) {
+		updateMapItems();
+	}
+	
+	private void updateMapItems() {
+		String url = "http://www.radarcultural.com.ar/events/get?";
+		Integer eventInterval = 1;
+		VisibleRegion visibleRegion = gMap.getProjection()
+				.getVisibleRegion();
+
+//		double neLat = visibleRegion.farLeft.latitude;
+//		double neLong = visibleRegion.farLeft.longitude;
+//		double swLat = visibleRegion.nearRight.latitude;
+//		double swLong = visibleRegion.nearRight.longitude;
+		double neLat = visibleRegion.latLngBounds.northeast.latitude;
+		double neLong = visibleRegion.latLngBounds.northeast.longitude;
+		double swLat = visibleRegion.latLngBounds.southwest.latitude;
+		double swLong = visibleRegion.latLngBounds.southwest.longitude;
+
+//		url += "eventCategory=%5B%5D";
+		url += "eventCategory=[]";
+		url += "&eventInterval=" + eventInterval;
+		url += "&neLat=" + neLat;
+		url += "&neLong=" + neLong;
+		url += "&swLat=" + swLat;
+		url += "&swLong=" + swLong;
+		
+		System.out.println(url);
+
+		new ReadWeatherJSONFeedTask().execute(url);		
 	}
 
 	private void getCurrentLocation() {
-
-		// double[] d = getLocation();
-		// double lat = d[0];
-		// double lng = d[1];
 
 		Location location = getLocation();
 
@@ -92,12 +152,28 @@ public class MainActivity extends FragmentActivity implements LocationListener {
 					.position(position)
 					.title("Tu ubicación actual")
 					.icon(BitmapDescriptorFactory
-							.fromResource(R.drawable.ic_launcher)));
+							.fromResource(R.drawable.launcher)));
 
 			gMap.animateCamera(CameraUpdateFactory
 					.newLatLngZoom(position, zoom));
 		}
 	}
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
 
 	// public double[] getLocation() {
 	// LocationManager lm = (LocationManager)
@@ -141,8 +217,6 @@ public class MainActivity extends FragmentActivity implements LocationListener {
 					break;
 			}
 		} else {
-			this.canGetLocation = true;
-
 			if (isNetworkEnabled) {
 				locationManager.requestLocationUpdates(
 						LocationManager.NETWORK_PROVIDER, MIN_TIME_BW_UPDATES,
